@@ -268,11 +268,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 We thank the following for their contributions to this project:
 
-- **OpenAI** for GPT-4V API access
-- **DeepSeek** for LLM API support
-- **ESPnet** for beam search implementations
-- **MediaPipe** for face detection tools
-- **The Cued Speech community** for domain expertise
+
+
+- **Auto-AVSR** for VSR model implementations
 
 ### Datasets
 
@@ -290,26 +288,10 @@ This work uses data from:
 For questions, suggestions, or collaboration opportunities, please:
 
 - Open an issue on GitHub
-- Contact the maintainers: [email to be added]
+- Contact the maintainers: [ghuang565@connect.hkust-gz.edu.cn]
 
 ---
 
-## 🔗 Related Resources
-
-### Papers
-- [Cued Speech Introduction](link-to-be-added)
-- [Visual Speech Recognition Survey](link-to-be-added)
-- [Multi-Modal Learning](link-to-be-added)
-
-### Datasets
-- [Cued Speech Dataset](link-to-be-added)
-
-### Tools
-- [ESPnet](https://github.com/espnet/espnet)
-- [MediaPipe](https://google.github.io/mediapipe/)
-- [PyTorch](https://pytorch.org/)
-
----
 
 ## 🗺️ Roadmap
 
