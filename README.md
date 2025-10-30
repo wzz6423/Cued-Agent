@@ -52,9 +52,9 @@ Automatic Cued Speech Recognition (ACSR) is significantly more challenging than 
 Our framework consists of four specialized agents:
 
 1. **Hand Recognition Agent**: Uses methods from STF-ACSR as a training-free recognition agent to recognise hand shapes and positions
-2. **Lip Reading Agent**: Employs a Conformer-based encoder for lip feature extraction, only finetuned onthe  lip-reading task
+2. **Lip Recognition Agent**: Employs a Conformer-based encoder for lip feature extraction, only finetuned on the lip-reading task and data
 3. **Joint Decoding Agent**: Fuses lip and hand information in a training-free manner for Cued Speech sequence decoding
-4. **Self-Correction Agent**: Leverages LLM to post-process and correct recognition errors and outputs the final Cued Speech sequence and corresponding sentences
+4. **Self-Correction Agent**: Leverages LLM to post-process and self-correct recognition errors based on CS and language rules. Then outputs the final Cued Speech sequence and corresponding sentences
 
 ---
 
@@ -186,7 +186,7 @@ The inference code (`Inference.py`, `run_inference.py`, `batch_inference.py`) is
 
 - **What Works:**
   - End-to-end video to text conversion
-  - All four agents properly integrated
+  - All four agents are properly integrated
   - Basic error handling and logging
   - JSON output generation
 
