@@ -43,21 +43,17 @@ Automatic Cued Speech Recognition (ACSR) is significantly more challenging than 
 
 ### System Overview
 
-**[Framework Diagram Placeholder]**
+**![Framework](framework.png)]**
 
 ```
-
-```
-
-**[Detailed Architecture Diagram Placeholder - To be added]**
 
 ### Multi-Agent Pipeline
 
 Our framework consists of four specialized agents:
 
-1. **Hand Recognition Agent**: Uses methods from STF-ACSR as training-free recognition agent to recognize hand shapes and positions
-2. **Lip Reading Agent**: Employs a Conformer-based encoder for lip feature extraction,only finetuned on lip-reading task
-3. **Joint Decoding Agent**: Fuses lip and hand information in the training-free manner for Cued Speech sequence decoding
+1. **Hand Recognition Agent**: Uses methods from STF-ACSR as a training-free recognition agent to recognise hand shapes and positions
+2. **Lip Reading Agent**: Employs a Conformer-based encoder for lip feature extraction, only finetuned onthe  lip-reading task
+3. **Joint Decoding Agent**: Fuses lip and hand information in a training-free manner for Cued Speech sequence decoding
 4. **Self-Correction Agent**: Leverages LLM to post-process and correct recognition errors and outputs the final Cued Speech sequence and corresponding sentences
 
 ---
@@ -80,7 +76,7 @@ Will be added soon.
 
 Extracts lip and hand ROI regions from input videos:
 - Face detection using MediaPipe or RetinaFace
-- Lip region cropping and normalization
+- Lip region cropping and normalisation
 - Hand region tracking and extraction
 - Output: Lip video tensor + Hand video frames
 
@@ -117,7 +113,7 @@ Multi-modal fusion and sequence decoding:
 
 **Key Components:**
 - `lightning_CCS_hand_prompt_decoding.py`: Main model architecture
-- `train_lip_agent.py`: Training script for lip reading model
+- `train_lip_agent.py`: Training script for lip-reading model
 - `test_CCS_hand_free.py`: Evaluation script
 - `espnet/`: Beam search and decoding utilities
 - `datamodule/`: Data loading and preprocessing
