@@ -213,8 +213,8 @@ The inference code (`Inference.py`, `run_inference.py`, `batch_inference.py`) is
 
 
 
-### Ablation Studies
 
+**![Ablation Results](ablation.png)**
 
 
 Demonstrates the contribution of each agent to the overall system performance.
