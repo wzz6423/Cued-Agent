@@ -43,7 +43,7 @@ Automatic Cued Speech Recognition (ACSR) is significantly more challenging than 
 
 ### System Overview
 
-**![Framework](framework.png)]**
+**![Framework](framework.png)**
 
 
 
@@ -208,8 +208,8 @@ The inference code (`Inference.py`, `run_inference.py`, `batch_inference.py`) is
 
 ## 📈 Performance
 
-### Benchmark Results
-
+### Experiments
+**![Comparative Results](comparative.png)**
 
 
 
