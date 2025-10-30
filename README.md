@@ -45,7 +45,7 @@ Automatic Cued Speech Recognition (ACSR) is significantly more challenging than 
 
 **![Framework](framework.png)]**
 
-```
+
 
 ### Multi-Agent Pipeline
 
