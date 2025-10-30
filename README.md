@@ -294,9 +294,6 @@ For questions, suggestions, or collaboration opportunities, please:
 - [x] Self-correction agent
 - [ ] Inference pipeline optimization (In Progress)
 - [ ] Web demo interface
-- [ ] Real-time inference
-- [ ] Model compression
-- [ ] Multi-language support
 - [ ] Public dataset release
 
 ---
