@@ -195,8 +195,6 @@ The inference code (`Inference.py`, `run_inference.py`, `batch_inference.py`) is
   - JSON output generation
 
 - **Being Enhanced:**
-  - Performance optimization for faster processing
-  - Better memory management for long videos
   - More comprehensive error handling
   - Extended documentation and examples
   - Additional configuration options
@@ -209,8 +207,6 @@ The inference code (`Inference.py`, `run_inference.py`, `batch_inference.py`) is
 - Web-based demo interface
 - Real-time inference support
 - Multi-language support (beyond Mandarin Chinese)
-- Model compression for edge deployment
-- Additional evaluation metrics and benchmarks
 
 ---
 
