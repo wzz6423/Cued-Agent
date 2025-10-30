@@ -5,7 +5,7 @@
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-red.svg)](https://pytorch.org/)
 [![arXiv](https://img.shields.io/badge/arXiv-2508.00391-b31b1b.svg)](https://arxiv.org/abs/2508.00391)
 
-**The first multi-agent system for automatic Cued Speech recognition, integrating visual lip reading, hand cue recognition, and self-correction mechanisms.**
+**The first multi-agent system for automatic Cued Speech recognition, integrating visual lip reading, hand cue recognition, and self-correction mechanisms. Accepted by ACM Multimedia 2025**
 
 ---
 
