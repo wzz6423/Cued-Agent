@@ -15,7 +15,12 @@ sys.path.insert(0, str(project_root))
 
 from Inference import CuedAgentInference
 from config_example import InferenceConfig
+from omegaconf import OmegaConf
 
+def obj_to_dict(obj):
+    if hasattr(obj, '__dict__'):
+        return {k: obj_to_dict(v) for k, v in obj.__dict__.items() if not k.startswith('__')}
+    return obj
 
 def main():
     parser = argparse.ArgumentParser(description='Cued Speech Inference System')
@@ -28,12 +33,8 @@ def main():
     parser.add_argument('--detector', type=str, default='mediapipe',
                        choices=['mediapipe', 'retinaface'],
                        help='Face detector type (default: mediapipe)')
-    parser.add_argument('--hand-weight', type=float, default=0.1,
-                       help='Hand prompt weight (default: 0.1)')
     parser.add_argument('--ctc-weight', type=float, default=0.1,
                        help='CTC weight (default: 0.1)')
-    parser.add_argument('--no-self-correction', action='store_true',
-                       help='Skip self-correction step')
 
     args = parser.parse_args()
 
@@ -46,6 +47,13 @@ def main():
     cfg = InferenceConfig()
     if args.model:
         cfg.pretrained_model_path = args.model
+    
+    # Ensure ckpt_path is set for Inference.py
+    cfg.ckpt_path = cfg.pretrained_model_path
+
+    # Convert to OmegaConf
+    cfg_dict = obj_to_dict(cfg)
+    cfg = OmegaConf.create(cfg_dict)
 
     # Check model path
     if not cfg.pretrained_model_path or not os.path.exists(cfg.pretrained_model_path):
@@ -61,22 +69,12 @@ def main():
         inference_pipeline = CuedAgentInference(
             cfg=cfg,
             detector=args.detector,
-            hand_weight=args.hand_weight,
             ctc_weight=args.ctc_weight
         )
 
         # Execute inference
         print(f"\nStarting video processing: {args.video}")
         result = inference_pipeline(args.video)
-
-        # If skipping self-correction, remove that part
-        if args.no_self_correction:
-            result = {
-                "Processed_Cued_Speech_Sequence": result.get('Processed_Cued_Speech_Sequence', ''),
-                "Pinyin_Sequence": "Skipped",
-                "Mandarin_Sequence": "Skipped",
-                "Note": "Self-correction step skipped"
-            }
 
         # Save result
         output_dir = os.path.dirname(args.output)
@@ -93,8 +91,6 @@ def main():
         print("Inference Result Summary")
         print("="*60)
         print(f"Cued Speech Sequence: {result['Processed_Cued_Speech_Sequence']}")
-        print(f"Pinyin Sequence: {result['Pinyin_Sequence']}")
-        print(f"Chinese Sentence: {result['Mandarin_Sequence']}")
         print("="*60 + "\n")
 
     except Exception as e:

@@ -51,6 +51,31 @@ class InferenceConfig:
                 self.type = "resnet"
                 self.num_layers = 18
                 self.pretrained = True
+                
+                # Conformer/Transformer parameters
+                self.adim = 768
+                self.aheads = 12
+                self.eunits = 3072
+                self.elayers = 12
+                self.transformer_input_layer = "conv3d"
+                self.dropout_rate = 0.1
+                self.transformer_attn_dropout_rate = 0.1
+                self.transformer_encoder_attn_layer_type = "rel_mha"
+                self.macaron_style = True
+                self.use_cnn_module = True
+                self.cnn_module_kernel = 31
+                self.zero_triu = False
+                self.a_upsample_ratio = 1
+                self.relu_type = "swish"
+                self.ddim = 768
+                self.dheads = 12
+                self.dunits = 3072
+                self.dlayers = 6
+                self.lsm_weight = 0.1
+                self.transformer_length_normalized_loss = False
+                self.mtlalpha = 0.1
+                self.ctc_type = "builtin"
+                self.rel_pos_type = "latest"
 
 
 # ==================== Usage Examples ====================
