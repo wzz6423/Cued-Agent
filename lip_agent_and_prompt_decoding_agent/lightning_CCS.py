@@ -1,5 +1,7 @@
+import os
 import torch
 import torchaudio
+import copy
 
 from CCS_metrics import compute_cer, compute_wer
 from cosine import WarmupCosineScheduler
@@ -8,8 +10,53 @@ from datamodule.transforms import TextTransform, TextTransform_CCS
 from pytorch_lightning import LightningModule
 from espnet.nets.batch_beam_search import BatchBeamSearch
 from espnet.nets.pytorch_backend.e2e_asr_conformer import E2E
+from espnet.nets.pytorch_backend.transformer.add_sos_eos import add_sos_eos
 from espnet.nets.scorers.length_bonus import LengthBonus
 from espnet.nets.scorers.ctc import CTCPrefixScorer
+
+
+class EMA:
+    """
+    Exponential Moving Average for model weights.
+
+    Maintains a shadow copy of model weights that is updated with exponential
+    moving average of training weights. This often leads to better generalization.
+    """
+    def __init__(self, model, decay=0.999):
+        self.model = model
+        self.decay = decay
+        self.shadow = {}
+        self.backup = {}
+        self._register()
+
+    def _register(self):
+        """Register shadow parameters"""
+        for name, param in self.model.named_parameters():
+            if param.requires_grad:
+                self.shadow[name] = param.data.clone()
+
+    @torch.no_grad()
+    def update(self):
+        """Update shadow weights with EMA"""
+        for name, param in self.model.named_parameters():
+            if param.requires_grad and name in self.shadow:
+                self.shadow[name] = (
+                    self.decay * self.shadow[name] + (1 - self.decay) * param.data
+                )
+
+    def apply_shadow(self):
+        """Apply shadow weights to model (for evaluation)"""
+        for name, param in self.model.named_parameters():
+            if param.requires_grad and name in self.shadow:
+                self.backup[name] = param.data.clone()
+                param.data = self.shadow[name]
+
+    def restore(self):
+        """Restore original weights after evaluation"""
+        for name, param in self.model.named_parameters():
+            if param.requires_grad and name in self.backup:
+                param.data = self.backup[name]
+        self.backup = {}
 
 
 def compute_word_level_distance(seq1, seq2):
@@ -19,16 +66,45 @@ def compute_word_level_distance(seq1, seq2):
 class ModelModule_CCS(LightningModule):
     def __init__(self, cfg):
         super().__init__()
-        self.save_hyperparameters(cfg)
+        # Skip saving hyperparameters for complex config objects
+        # to avoid serialization issues with nested structures
         self.cfg = cfg
         if self.cfg.data.modality == "audio":
             self.backbone_args = self.cfg.model.audio_backbone
         elif self.cfg.data.modality == "video":
             self.backbone_args = self.cfg.model.visual_backbone
 
-        self.text_transform = TextTransform_CCS()
+        # Use BPE tokenizer for pretrained model compatibility (5049 tokens)
+        # Check if we should use BPE (for pretrained models) or CCS units (for training)
+        use_bpe = getattr(cfg, "use_bpe_tokenizer", True)  # Default to BPE for pretrained
+
+        if use_bpe:
+            from datamodule.transforms import TextTransform
+            print(f"  ✓ Using BPE tokenizer (5049 tokens) for pretrained model")
+            self.text_transform = TextTransform(target_vocab_size=5049)
+        else:
+            # Fallback to CCS units for training
+            units_file = "data/multilingual_units.txt"
+            if os.path.exists(units_file):
+                print(f"  ✓ Loading multilingual units from {units_file}")
+                self.text_transform = TextTransform_CCS(units_file=units_file)
+            else:
+                self.text_transform = TextTransform_CCS()
+
         self.token_list = self.text_transform.token_list
         self.model = E2E(len(self.token_list), self.backbone_args)
+
+        # Idea 1: Semantic Alignment Projections
+        # Project visual and text features to same dimension for contrastive learning
+        self.align_proj_visual = torch.nn.Linear(self.backbone_args.adim, 256)
+        self.align_proj_text = torch.nn.Linear(self.backbone_args.ddim, 256)
+        self.align_temperature = 0.07
+
+        # EMA (Exponential Moving Average) for better generalization
+        # Will be initialized after first forward pass
+        self.ema = None
+        self.use_ema = getattr(cfg, "use_ema", True)  # Enable by default
+        self.ema_decay = getattr(cfg, "ema_decay", 0.999)
 
         # -- initialise
         if self.cfg.pretrained_model_path:
@@ -71,10 +147,31 @@ class ModelModule_CCS(LightningModule):
         return predicted
 
     def training_step(self, batch, batch_idx):
-        return self._step(batch, batch_idx, step_type="train")
+        loss = self._step(batch, batch_idx, step_type="train")
+
+        # Initialize EMA after first step (when model is on correct device)
+        if self.use_ema and self.ema is None:
+            self.ema = EMA(self.model, decay=self.ema_decay)
+            print(f"  ✓ EMA initialized with decay={self.ema_decay}")
+
+        # Update EMA after each training step
+        if self.use_ema and self.ema is not None:
+            self.ema.update()
+
+        return loss
 
     def validation_step(self, batch, batch_idx):
         return self._step(batch, batch_idx, step_type="val")
+
+    def on_validation_epoch_start(self):
+        """Apply EMA weights before validation"""
+        if self.use_ema and self.ema is not None:
+            self.ema.apply_shadow()
+
+    def on_validation_epoch_end(self):
+        """Restore original weights after validation"""
+        if self.use_ema and self.ema is not None:
+            self.ema.restore()
 
     def test_step(self, sample, sample_idx):
         enc_feat, _ = self.model.encoder(sample["input"].unsqueeze(0).to(self.device), None)
@@ -105,8 +202,51 @@ class ModelModule_CCS(LightningModule):
         return
 
     def _step(self, batch, batch_idx, step_type):
-        loss, loss_ctc, loss_att, acc = self.model(batch["inputs"], batch["input_lengths"], batch["targets"])
+        # Updated to unpack 5 return values (added enc_feat for alignment)
+        loss, loss_ctc, loss_att, acc, enc_feat = self.model(batch["inputs"], batch["input_lengths"], batch["targets"])
         batch_size = len(batch["inputs"])
+
+        # Idea 1: Semantic Alignment Loss (Contrastive Learning)
+        if step_type == "train":
+            # 1. Get Text Embeddings from Decoder
+            # Use ground truth targets to get text embeddings
+            # targets: [Batch, Length]
+            ys_in_pad, _ = add_sos_eos(batch["targets"], self.model.sos, self.model.eos, self.model.ignore_id)
+            # [Batch, Length, Dim]
+            text_emb = self.model.decoder.embed(ys_in_pad)
+            
+            # 2. Pooling (Mean Pooling) to get sentence-level representation
+            # Mask out padding for correct mean
+            # enc_feat: [Batch, Time, Dim]
+            vis_mean = enc_feat.mean(dim=1)
+            text_mean = text_emb.mean(dim=1)
+            
+            # 3. Projection
+            v_proj = torch.nn.functional.normalize(self.align_proj_visual(vis_mean), dim=1)
+            t_proj = torch.nn.functional.normalize(self.align_proj_text(text_mean), dim=1)
+            
+            # 4. Contrastive Loss (InfoNCE-like)
+            # Cosine similarity matrix [Batch, Batch]
+            logits = torch.matmul(v_proj, t_proj.T) / self.align_temperature
+            labels = torch.arange(batch_size).to(logits.device)
+            
+            loss_align_v2t = torch.nn.functional.cross_entropy(logits, labels)
+            loss_align_t2v = torch.nn.functional.cross_entropy(logits.T, labels)
+            loss_align = (loss_align_v2t + loss_align_t2v) / 2
+            
+            # Loss Warmup Strategy (Suggestion 1)
+            # Gradually increase alignment loss weight from 0.0 to 0.1 over first 5 epochs
+            warmup_epochs = 5
+            target_weight = 0.1
+            if self.current_epoch < warmup_epochs:
+                align_weight = target_weight * (self.current_epoch / warmup_epochs)
+            else:
+                align_weight = target_weight
+            
+            loss = loss + align_weight * loss_align
+            
+            self.log("loss_align", loss_align, on_step=False, on_epoch=True, batch_size=batch_size)
+            self.log("align_weight", align_weight, on_step=False, on_epoch=True, batch_size=batch_size)
 
         if step_type == "train":
             self.log("loss", loss, on_step=True, on_epoch=True, batch_size=batch_size)
@@ -125,10 +265,16 @@ class ModelModule_CCS(LightningModule):
         return loss
 
     def on_train_epoch_start(self):
-        sampler = self.trainer.train_dataloader.loaders.batch_sampler
-        if hasattr(sampler, "set_epoch"):
+        dataloader = self.trainer.train_dataloader
+        if hasattr(dataloader, "batch_sampler"):
+            sampler = dataloader.batch_sampler
+        elif hasattr(dataloader, "loaders") and hasattr(dataloader.loaders, "batch_sampler"):
+            sampler = dataloader.loaders.batch_sampler
+        else:
+            sampler = None
+            
+        if sampler and hasattr(sampler, "set_epoch"):
             sampler.set_epoch(self.current_epoch)
-        return super().on_train_epoch_start()
 
     def on_test_epoch_start(self):
         self.total_length = 0
@@ -145,7 +291,7 @@ class ModelModule_CCS(LightningModule):
         self.log("CCS_wer", self.accumulate_wer / self.batch_num)
 
 
-def get_beam_search_decoder(model, token_list, ctc_weight=0.1, beam_size=40):
+def get_beam_search_decoder(model, token_list, ctc_weight=0.1, beam_size=40, length_penalty=0.0):
     scorers = {
         "decoder": model.decoder,
         "ctc": CTCPrefixScorer(model.ctc, model.eos),
@@ -157,7 +303,7 @@ def get_beam_search_decoder(model, token_list, ctc_weight=0.1, beam_size=40):
         "decoder": 1.0 - ctc_weight,
         "ctc": ctc_weight,
         "lm": 0.0,
-        "length_bonus": 0.0,
+        "length_bonus": length_penalty,
     }
 
     return BatchBeamSearch(

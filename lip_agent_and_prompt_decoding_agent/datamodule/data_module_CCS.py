@@ -57,7 +57,7 @@ class DataModule_CCS(LightningDataModule):
     def _dataloader(self, ds, sampler, collate_fn):
         return torch.utils.data.DataLoader(
             ds,
-            num_workers=12,
+            num_workers=0, # Changed from 12 for better Mac compatibility
             pin_memory=True,
             batch_sampler=sampler,
             collate_fn=collate_fn,

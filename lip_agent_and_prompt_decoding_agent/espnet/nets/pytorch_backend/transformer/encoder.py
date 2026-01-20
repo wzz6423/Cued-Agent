@@ -91,6 +91,7 @@ class Encoder(torch.nn.Module):
         padding_idx=-1,
         relu_type="prelu",
         a_upsample_ratio=1,
+        drop_path_rate=0.1,
     ):
         """Construct an Encoder object."""
         super(Encoder, self).__init__()
@@ -137,9 +138,12 @@ class Encoder(torch.nn.Module):
         convolution_layer = ConvolutionModule
         convolution_layer_args = (attention_dim, cnn_module_kernel)
 
-        self.encoders = repeat(
-            num_blocks,
-            lambda: EncoderLayer(
+        # Progressive drop path: linearly increase drop rate from 0 to drop_path_rate
+        # This follows the common practice in Vision Transformers
+        dpr = [x.item() for x in torch.linspace(0, drop_path_rate, num_blocks)]
+
+        self.encoders = torch.nn.ModuleList([
+            EncoderLayer(
                 attention_dim,
                 encoder_attn_layer(*encoder_attn_layer_args),
                 positionwise_layer(*positionwise_layer_args),
@@ -148,16 +152,19 @@ class Encoder(torch.nn.Module):
                 normalize_before,
                 concat_after,
                 macaron_style,
-            ),
-        )
+                drop_path_rate=dpr[i],
+            )
+            for i in range(num_blocks)
+        ])
         if self.normalize_before:
             self.after_norm = LayerNorm(attention_dim)
 
-    def forward(self, xs, masks):
+    def forward(self, xs, masks, return_intermediate=False):
         """Encode input sequence.
 
         :param torch.Tensor xs: input tensor
         :param torch.Tensor masks: input mask
+        :param bool return_intermediate: whether to return intermediate layer output
         :return: position embedded tensor and mask
         :rtype Tuple[torch.Tensor, torch.Tensor]:
         """
@@ -165,13 +172,31 @@ class Encoder(torch.nn.Module):
             xs = self.frontend(xs)
 
         xs = self.embed(xs)
-        xs, masks = self.encoders(xs, masks)
+
+        if return_intermediate:
+            # Assuming 12 layers, we want output of layer 6 (index 5)
+            middle_layer_idx = len(self.encoders) // 2 - 1
+            intermediate_xs = None
+
+            for i, layer in enumerate(self.encoders):
+                xs, masks = layer(xs, masks)
+                if i == middle_layer_idx:
+                    if isinstance(xs, tuple):
+                        intermediate_xs = xs[0]
+                    else:
+                        intermediate_xs = xs
+        else:
+            for layer in self.encoders:
+                xs, masks = layer(xs, masks)
 
         if isinstance(xs, tuple):
             xs = xs[0]
 
         if self.normalize_before:
             xs = self.after_norm(xs)
+
+        if return_intermediate:
+            return xs, masks, intermediate_xs
 
         return xs, masks
 

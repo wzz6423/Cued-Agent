@@ -19,9 +19,57 @@ from espnet.nets.pytorch_backend.transformer.label_smoothing_loss import LabelSm
 from espnet.nets.pytorch_backend.transformer.mask import target_mask
 
 
+class DynamicFeatureModule(torch.nn.Module):
+    """
+    Module to compute and fuse dynamic features (velocity and acceleration)
+    Idea 2: Learning dynamic changes (lip speed, acceleration)
+    """
+    def __init__(self, input_channels=1):
+        super().__init__()
+        # Project concatenated features (Original + Delta + DeltaDelta) back to original channels
+        self.projection = torch.nn.Conv3d(input_channels * 3, input_channels, kernel_size=1)
+        
+        # Initialization (Suggestion 2)
+        # Initialize to Identity-like mapping to preserve original features initially
+        # Weights: [Out, In, K, K, K] -> [C, 3C, 1, 1, 1]
+        torch.nn.init.zeros_(self.projection.weight)
+        torch.nn.init.zeros_(self.projection.bias)
+        
+        # Set weights for the original features (first C channels) to Identity (1.0)
+        # This ensures that at start, output ~= input, and deltas are ignored until learned
+        for i in range(input_channels):
+            self.projection.weight.data[i, i, 0, 0, 0] = 1.0
+
+    def forward(self, x):
+        # Expecting 5D input: [Batch, Channel, Time, Height, Width]
+        if x.dim() != 5:
+            return x
+            
+        # 1. Compute First Order Delta (Velocity)
+        # Pad time dimension to maintain size
+        x_pad = torch.nn.functional.pad(x, (0, 0, 0, 0, 1, 1), mode='replicate')
+        delta = x_pad[:, :, 2:] - x_pad[:, :, :-2] # Central difference
+        
+        # 2. Compute Second Order Delta (Acceleration)
+        d_pad = torch.nn.functional.pad(delta, (0, 0, 0, 0, 1, 1), mode='replicate')
+        delta2 = d_pad[:, :, 2:] - d_pad[:, :, :-2]
+        
+        # 3. Concatenate and Project
+        # [B, 3*C, T, H, W]
+        combined = torch.cat([x, delta, delta2], dim=1)
+        
+        return self.projection(combined)
+
+
 class E2E(torch.nn.Module):
     def __init__(self, odim, args, ignore_id=-1):
         torch.nn.Module.__init__(self)
+
+        # Initialize Dynamic Feature Module
+        # Assuming grayscale input (1 channel) for now, or infer from args if available
+        # In standard Cued Speech, input is often grayscale (1) or RGB (3)
+        # We use a safe default of 1, but it should ideally match input data
+        self.dynamic_feature_module = DynamicFeatureModule(input_channels=1)
 
         self.encoder = Encoder(
             attention_dim=args.adim,
@@ -82,31 +130,68 @@ class E2E(torch.nn.Module):
             self.ctc = CTC(
                 odim, args.adim, args.dropout_rate, ctc_type=args.ctc_type, reduce=True
             )
+            # Intermediate CTC (Suggestion 3)
+            # Use same config as main CTC
+            self.ctc_inter = CTC(
+                odim, args.adim, args.dropout_rate, ctc_type=args.ctc_type, reduce=True
+            )
+            self.interctc_weight = 0.5 # Weight for intermediate CTC
         else:
             self.ctc = None
+            self.ctc_inter = None
 
     def forward(self, x, lengths, label):
         if self.transformer_input_layer == "conv1d":
             lengths = torch.div(lengths, 640, rounding_mode="trunc")
         padding_mask = make_non_pad_mask(lengths).to(x.device).unsqueeze(-2)
 
-        x, _ = self.encoder(x, padding_mask)
+        # Apply Dynamic Feature Extraction (Idea 2)
+        if x.dim() == 5: # [B, T, C, H, W] -> [B, C, T, H, W]
+             x = x.permute(0, 2, 1, 3, 4)
+             x = self.dynamic_feature_module(x)
+             # Permute back to [B, T, C, H, W] for the rest of the encoder
+             x = x.permute(0, 2, 1, 3, 4)
+             
+        # Concatenate C into H or W or flatten for linear input if needed
+        # Standard ESPnet Conformer expects [B, T, D] or [B, T, C, H, W] for Conv2d/Conv3d layers
+        if x.dim() == 5 and self.transformer_input_layer in ["conv2d", "conv3d", "vgg2l"]:
+             # Keep as is, ESPnet encoder will handle [B, T, C, H, W]
+             pass
+        elif x.dim() == 5:
+             # Flatten [B, T, C, H, W] to [B, T, C*H*W]
+             b, t, c, h, w = x.shape
+             x = x.view(b, t, c * h * w)
+
+        # Enable intermediate output for Inter-CTC
+        x, _, x_inter = self.encoder(x, padding_mask, return_intermediate=True)
 
         # ctc loss
         loss_ctc, ys_hat = self.ctc(x, lengths, label)
+        
+        # inter-ctc loss
+        loss_ctc_inter = 0
+        if self.ctc_inter is not None and x_inter is not None:
+            loss_ctc_inter, _ = self.ctc_inter(x_inter, lengths, label)
 
         if self.proj_decoder:
-            x = self.proj_decoder(x)
+            x_proj = self.proj_decoder(x)
+        else:
+            x_proj = x
 
         # decoder loss
         ys_in_pad, ys_out_pad = add_sos_eos(label, self.sos, self.eos, self.ignore_id)
         ys_mask = target_mask(ys_in_pad, self.ignore_id)
-        pred_pad, _ = self.decoder(ys_in_pad, ys_mask, x, padding_mask)
+        pred_pad, _ = self.decoder(ys_in_pad, ys_mask, x_proj, padding_mask)
         loss_att = self.criterion(pred_pad, ys_out_pad)
-        loss = self.mtlalpha * loss_ctc + (1 - self.mtlalpha) * loss_att
+        
+        # Combine losses: MTL + InterCTC
+        # Loss = alpha * CTC + (1-alpha) * Att + beta * InterCTC
+        loss_main = self.mtlalpha * loss_ctc + (1 - self.mtlalpha) * loss_att
+        loss = loss_main + self.interctc_weight * loss_ctc_inter
 
         acc = th_accuracy(
             pred_pad.view(-1, self.odim), ys_out_pad, ignore_label=self.ignore_id
         )
 
-        return loss, loss_ctc, loss_att, acc
+        # Return encoder output 'x' for Semantic Alignment (Idea 1)
+        return loss, loss_ctc, loss_att, acc, x

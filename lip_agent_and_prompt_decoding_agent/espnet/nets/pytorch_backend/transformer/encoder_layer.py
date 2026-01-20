@@ -15,6 +15,38 @@ from espnet.nets.pytorch_backend.transformer.layer_norm import LayerNorm
 from torch import nn
 
 
+def drop_path(x, drop_prob: float = 0., training: bool = False):
+    """
+    Drop paths (Stochastic Depth) per sample.
+
+    This is the same as the DropConnect impl I created for EfficientNet.
+    https://arxiv.org/abs/1603.09382
+    """
+    if drop_prob == 0. or not training:
+        return x
+    keep_prob = 1 - drop_prob
+    shape = (x.shape[0],) + (1,) * (x.ndim - 1)  # work with diff dim tensors
+    random_tensor = keep_prob + torch.rand(shape, dtype=x.dtype, device=x.device)
+    random_tensor.floor_()  # binarize
+    output = x.div(keep_prob) * random_tensor
+    return output
+
+
+class DropPath(nn.Module):
+    """
+    DropPath (Stochastic Depth) regularization.
+
+    Randomly drops entire residual blocks during training to prevent overfitting.
+    This is particularly effective for deep transformer models.
+    """
+    def __init__(self, drop_prob=0.):
+        super(DropPath, self).__init__()
+        self.drop_prob = drop_prob
+
+    def forward(self, x):
+        return drop_path(x, self.drop_prob, self.training)
+
+
 class EncoderLayer(nn.Module):
     """Encoder layer module.
 
@@ -48,6 +80,7 @@ class EncoderLayer(nn.Module):
         normalize_before=True,
         concat_after=False,
         macaron_style=False,
+        drop_path_rate=0.0,
     ):
         """Construct an EncoderLayer object."""
         super(EncoderLayer, self).__init__()
@@ -67,6 +100,8 @@ class EncoderLayer(nn.Module):
             self.norm_conv = LayerNorm(size)  # for the CNN module
             self.norm_final = LayerNorm(size)  # for the final output of the block
         self.dropout = nn.Dropout(dropout_rate)
+        # DropPath (Stochastic Depth) for regularization
+        self.drop_path = DropPath(drop_path_rate) if drop_path_rate > 0. else nn.Identity()
         self.size = size
         self.normalize_before = normalize_before
         self.concat_after = concat_after
@@ -91,7 +126,7 @@ class EncoderLayer(nn.Module):
             residual = x
             if self.normalize_before:
                 x = self.norm_ff_macaron(x)
-            x = residual + self.ff_scale * self.dropout(self.feed_forward_macaron(x))
+            x = residual + self.drop_path(self.ff_scale * self.dropout(self.feed_forward_macaron(x)))
             if not self.normalize_before:
                 x = self.norm_ff_macaron(x)
 
@@ -115,9 +150,9 @@ class EncoderLayer(nn.Module):
 
         if self.concat_after:
             x_concat = torch.cat((x, x_att), dim=-1)
-            x = residual + self.concat_linear(x_concat)
+            x = residual + self.drop_path(self.concat_linear(x_concat))
         else:
-            x = residual + self.dropout(x_att)
+            x = residual + self.drop_path(self.dropout(x_att))
         if not self.normalize_before:
             x = self.norm_mha(x)
 
@@ -126,7 +161,7 @@ class EncoderLayer(nn.Module):
             residual = x
             if self.normalize_before:
                 x = self.norm_conv(x)
-            x = residual + self.dropout(self.conv_module(x))
+            x = residual + self.drop_path(self.dropout(self.conv_module(x)))
             if not self.normalize_before:
                 x = self.norm_conv(x)
 
@@ -134,7 +169,7 @@ class EncoderLayer(nn.Module):
         residual = x
         if self.normalize_before:
             x = self.norm_ff(x)
-        x = residual + self.ff_scale * self.dropout(self.feed_forward(x))
+        x = residual + self.drop_path(self.ff_scale * self.dropout(self.feed_forward(x)))
         if not self.normalize_before:
             x = self.norm_ff(x)
 

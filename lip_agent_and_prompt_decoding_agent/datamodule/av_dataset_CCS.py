@@ -4,7 +4,7 @@ import torch
 import torchaudio
 import torchvision
 
-from LipModel_MFM.datamodule.hand_util import load_hand_recog
+from .hand_util import load_hand_recog
 
 
 def cut_or_pad(data, size, dim=0):
@@ -82,12 +82,20 @@ class AVDataset_CCS(torch.utils.data.Dataset):
         path = os.path.join(self.root_dir, dataset_name, rel_path)
         if os.path.exists(path) is False:
             raise FileNotFoundError(f"{path} does not exist.")
-        if os.path.exists(hand_recog_path) is False:
-            raise FileNotFoundError(f"{hand_recog_path} does not exist.")
+        
+        # Load hand data if available, else use zero matrix
+        hand_available = False
+        if hand_recog_path and os.path.exists(hand_recog_path):
+            hand_available = True
+            
         if self.modality == "video":
             video = load_video(path)
             video = self.video_transform(video)
-            hand_recog_matrix = load_hand_recog(hand_recog_path, hand_position_path, input_length)
+            if hand_available:
+                hand_recog_matrix = load_hand_recog(hand_recog_path, hand_position_path, input_length)
+            else:
+                # Use a zero matrix [T, 44] if no hand data
+                hand_recog_matrix = torch.zeros((input_length, 44))
             return {"input": video, "target": token_id, "hand_matrix": hand_recog_matrix}
         elif self.modality == "audio":
             audio = load_audio(path)
