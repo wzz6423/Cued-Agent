@@ -14,12 +14,20 @@ logger = logging.getLogger(__name__)
 
 
 def hydra_init(cfg_name="config") -> None:
+    from dataclasses import MISSING
 
     cs = ConfigStore.instance()
     cs.store(name=f"{cfg_name}", node=FairseqConfig)
 
     for k in FairseqConfig.__dataclass_fields__:
-        v = FairseqConfig.__dataclass_fields__[k].default
+        field_info = FairseqConfig.__dataclass_fields__[k]
+        # Handle both default and default_factory
+        if field_info.default is not MISSING:
+            v = field_info.default
+        elif field_info.default_factory is not MISSING:
+            v = field_info.default_factory()
+        else:
+            continue  # Skip fields without defaults
         try:
             cs.store(name=k, node=v)
         except BaseException:
