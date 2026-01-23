@@ -1,8 +1,8 @@
 defaults:
   - _self_
-  - dataset: CCS_multi_hand
+  - dataset: lrs2_english
 modality: video
 use_audio_normalise: False
-# Reduced max_frames for MPS/CPU memory constraints (Apple Silicon)
-max_frames: 300
+# Reduced max_frames to fit in GPU memory (RTX 3080 Ti 12GB)
+max_frames: 200
 max_frames_val: 200

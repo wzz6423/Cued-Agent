@@ -63,6 +63,7 @@ def main(cfg):
         accelerator=accelerator,
         devices=devices,
         strategy=strategy,
+        use_distributed_sampler=False,  # Use custom batch sampler
     )
 
     trainer.fit(model=modelmodule, datamodule=datamodule)

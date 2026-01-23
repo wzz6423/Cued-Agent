@@ -6,6 +6,7 @@ import copy
 from CCS_metrics import compute_cer, compute_wer
 from cosine import WarmupCosineScheduler
 from datamodule.transforms import TextTransform, TextTransform_CCS
+from datamodule.transforms_english import TextTransform_English
 
 from pytorch_lightning import LightningModule
 from espnet.nets.batch_beam_search import BatchBeamSearch
@@ -74,22 +75,31 @@ class ModelModule_CCS(LightningModule):
         elif self.cfg.data.modality == "video":
             self.backbone_args = self.cfg.model.visual_backbone
 
-        # Use BPE tokenizer for pretrained model compatibility (5049 tokens)
-        # Check if we should use BPE (for pretrained models) or CCS units (for training)
-        use_bpe = getattr(cfg, "use_bpe_tokenizer", True)  # Default to BPE for pretrained
+        # Determine tokenizer based on dataset
+        dataset_name = getattr(cfg.data.dataset, '_name_', '') if hasattr(cfg.data, 'dataset') else ''
+        # Also check root_dir for English dataset detection
+        root_dir = getattr(cfg.data.dataset, 'root_dir', '') if hasattr(cfg.data, 'dataset') else ''
+        use_english = 'english' in str(dataset_name).lower() or 'lrs2' in str(dataset_name).lower() or 'mvlrs' in str(root_dir).lower()
 
-        if use_bpe:
-            from datamodule.transforms import TextTransform
-            print(f"  ✓ Using BPE tokenizer (5049 tokens) for pretrained model")
-            self.text_transform = TextTransform(target_vocab_size=5049)
+        if use_english:
+            print(f"  ✓ Using English character-level tokenizer (30 tokens)")
+            self.text_transform = TextTransform_English()
         else:
-            # Fallback to CCS units for training
-            units_file = "data/multilingual_units.txt"
-            if os.path.exists(units_file):
-                print(f"  ✓ Loading multilingual units from {units_file}")
-                self.text_transform = TextTransform_CCS(units_file=units_file)
+            # Check if we should use BPE (for pretrained models) or CCS units (for training)
+            use_bpe = getattr(cfg, "use_bpe_tokenizer", False)
+
+            if use_bpe:
+                print(f"  ✓ Using BPE tokenizer (5049 tokens) for pretrained model")
+                self.text_transform = TextTransform(target_vocab_size=5049)
             else:
-                self.text_transform = TextTransform_CCS()
+                # Fallback to CCS units for training
+                units_file = "data/multilingual_units.txt"
+                if os.path.exists(units_file):
+                    print(f"  ✓ Loading multilingual units from {units_file}")
+                    self.text_transform = TextTransform_CCS(units_file=units_file)
+                else:
+                    print(f"  ✓ Using CCS tokenizer (44 tokens)")
+                    self.text_transform = TextTransform_CCS()
 
         self.token_list = self.text_transform.token_list
         self.model = E2E(len(self.token_list), self.backbone_args)
@@ -127,24 +137,27 @@ class ModelModule_CCS(LightningModule):
                 self.model.load_state_dict(ckpt, strict=False)
 
     def configure_optimizers(self):
-        optimizer = torch.optim.AdamW(
-            [{"name": "model", "params": self.model.parameters(), "lr": self.cfg.optimizer.lr}],
-            weight_decay=self.cfg.optimizer.weight_decay, betas=(0.9, 0.98))
+        # Separate parameter groups so we can use different learning rates for encoder/decoder
+        encoder_params = [p for n, p in self.model.named_parameters() if "encoder" in n and p.requires_grad]
+        decoder_params = [p for n, p in self.model.named_parameters() if "decoder" in n and p.requires_grad]
+        other_params = [p for n, p in self.model.named_parameters() if ("encoder" not in n and "decoder" not in n) and p.requires_grad]
+
+        encoder_lr = getattr(self.cfg.optimizer, "encoder_lr", self.cfg.optimizer.lr * 0.2)
+        decoder_lr = getattr(self.cfg.optimizer, "decoder_lr", self.cfg.optimizer.lr)
+
+        param_groups = []
+        if encoder_params:
+            param_groups.append({"params": encoder_params, "lr": encoder_lr, "name": "encoder"})
+        if decoder_params:
+            param_groups.append({"params": decoder_params, "lr": decoder_lr, "name": "decoder"})
+        if other_params:
+            param_groups.append({"params": other_params, "lr": decoder_lr, "name": "other"})
+
+        optimizer = torch.optim.AdamW(param_groups, weight_decay=self.cfg.optimizer.weight_decay, betas=(0.9, 0.98))
         scheduler = WarmupCosineScheduler(optimizer, self.cfg.optimizer.warmup_epochs, self.cfg.trainer.max_epochs,
-                                          len(self.trainer.datamodule.train_dataloader()))
+                                         len(self.trainer.datamodule.train_dataloader()))
         scheduler = {"scheduler": scheduler, "interval": "step", "frequency": 1}
         return [optimizer], [scheduler]
-
-    def forward(self, sample):
-        self.beam_search = get_beam_search_decoder(self.model, self.token_list)
-        enc_feat, _ = self.model.encoder(sample.unsqueeze(0).to(self.device), None)
-        enc_feat = enc_feat.squeeze(0)
-
-        nbest_hyps = self.beam_search(enc_feat)
-        nbest_hyps = [h.asdict() for h in nbest_hyps[: min(len(nbest_hyps), 1)]]
-        predicted_token_id = torch.tensor(list(map(int, nbest_hyps[0]["yseq"][1:])))
-        predicted = self.text_transform.post_process(predicted_token_id).replace("<eos>", "")
-        return predicted
 
     def training_step(self, batch, batch_idx):
         loss = self._step(batch, batch_idx, step_type="train")
@@ -205,6 +218,17 @@ class ModelModule_CCS(LightningModule):
         # Updated to unpack 5 return values (added enc_feat for alignment)
         loss, loss_ctc, loss_att, acc, enc_feat = self.model(batch["inputs"], batch["input_lengths"], batch["targets"])
         batch_size = len(batch["inputs"])
+
+        # Monitor CTC blank probability (collapse detection)
+        try:
+            if enc_feat is not None and self.model.ctc is not None:
+                ctc_logits = self.model.ctc.ctc_lo(enc_feat[0])  # [T, V]
+                probs = torch.softmax(ctc_logits, dim=-1)
+                blank_prob = probs[:, 0].mean()
+                self.log("ctc_blank_prob", blank_prob, on_step=False, on_epoch=True, prog_bar=True)
+        except Exception:
+            pass
+
 
         # Idea 1: Semantic Alignment Loss (Contrastive Learning)
         if step_type == "train":
@@ -292,6 +316,11 @@ class ModelModule_CCS(LightningModule):
 
 
 def get_beam_search_decoder(model, token_list, ctc_weight=0.1, beam_size=40, length_penalty=0.0):
+    # Ensure beam_size doesn't exceed vocabulary size
+    vocab_size = len(token_list)
+    if beam_size > vocab_size:
+        beam_size = vocab_size
+
     scorers = {
         "decoder": model.decoder,
         "ctc": CTCPrefixScorer(model.ctc, model.eos),

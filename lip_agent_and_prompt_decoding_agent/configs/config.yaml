@@ -17,7 +17,7 @@ gpus: 0
 slurm_job_id: null
 file_path: 
 ckpt_path: null
-pretrained_model_path: /Users/wzz/个人/project/Cued-Agent/checkpoints/pretrained/vsr_trlrs2lrs3vox2avsp_base.pth
+pretrained_model_path: /home/ubuntu/wzz/Cued-Agent/checkpoints/pretrained/vsr_trlrs2lrs3vox2avsp_base.pth
 transfer_frontend:
 transfer_encoder:
 

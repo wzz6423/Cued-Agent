@@ -1,4 +1,5 @@
 import os
+import pickle
 
 import torch
 import torchaudio
@@ -23,11 +24,22 @@ def cut_or_pad(data, size, dim=0):
 
 def load_video(path):
     """
+    Load video from .mp4 or .pkl file.
     rtype: torch, T x C x H x W
     """
-    vid = torchvision.io.read_video(path, pts_unit="sec", output_format="THWC")[0]
-    vid = vid.permute((0, 3, 1, 2))
-    return vid
+    if path.endswith('.pkl'):
+        # Load preprocessed pickle file
+        with open(path, 'rb') as f:
+            vid = pickle.load(f)
+        if isinstance(vid, torch.Tensor):
+            return vid
+        else:
+            return torch.from_numpy(vid)
+    else:
+        # Load video file (mp4, etc.)
+        vid = torchvision.io.read_video(path, pts_unit="sec", output_format="THWC")[0]
+        vid = vid.permute((0, 3, 1, 2))
+        return vid
 
 
 def load_audio(path):

@@ -166,7 +166,12 @@ class E2E(torch.nn.Module):
         x, _, x_inter = self.encoder(x, padding_mask, return_intermediate=True)
 
         # ctc loss
-        loss_ctc, ys_hat = self.ctc(x, lengths, label)
+        if self.ctc is not None:
+            loss_ctc, ys_hat = self.ctc(x, lengths, label)
+        else:
+            # If mtlalpha==0 the ctc module is disabled — return zero loss and None hypothesis
+            loss_ctc = torch.tensor(0.0, device=x.device)
+            ys_hat = None
         
         # inter-ctc loss
         loss_ctc_inter = 0
@@ -187,7 +192,7 @@ class E2E(torch.nn.Module):
         # Combine losses: MTL + InterCTC
         # Loss = alpha * CTC + (1-alpha) * Att + beta * InterCTC
         loss_main = self.mtlalpha * loss_ctc + (1 - self.mtlalpha) * loss_att
-        loss = loss_main + self.interctc_weight * loss_ctc_inter
+        loss = loss_main + (self.interctc_weight * loss_ctc_inter if hasattr(self, 'interctc_weight') else 0)
 
         acc = th_accuracy(
             pred_pad.view(-1, self.odim), ys_out_pad, ignore_label=self.ignore_id
