@@ -96,7 +96,7 @@ class AVDataset_CCS(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         # Robustly skip corrupted samples (e.g., broken MP4 headers or tiny frames)
-        max_attempts = 5
+        max_attempts = 20
         for attempt in range(max_attempts):
             curr_idx = (idx + attempt) % len(self.list)
             dataset_name, rel_path, input_length, token_id, hand_recog_path, hand_position_path = self.list[curr_idx]
