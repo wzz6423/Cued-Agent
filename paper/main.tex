@@ -1,0 +1,51 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+
+% 基础包
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{hyperref}
+\usepackage{subcaption}
+
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+
+\begin{document}
+
+\title{Cued-Agent: A Conformer-based Lip Reading System with Dynamic Feature Learning and Semantic Alignment}
+
+\author{
+\IEEEauthorblockN{Zezhou Wang}
+\IEEEauthorblockA{\textit{School of Computer and Communication} \\
+\textit{Lanzhou University of Technology}\\
+Lanzhou, Gansu, China \\
+wang\_ze\_zhou@163.com}
+}
+
+\maketitle
+
+\begin{abstract}
+Lip reading, also known as visual speech recognition, aims to recognize speech content from visual information of lip movements. Despite significant progress in recent years, challenges remain in capturing temporal dynamics and aligning visual-linguistic representations. In this paper, we propose Cued-Agent, a novel end-to-end lip reading system based on the Conformer architecture with three key innovations: (1) a Dynamic Feature Module that explicitly models lip movement velocity and acceleration through first and second-order derivatives; (2) a Semantic Alignment mechanism using contrastive learning to enhance visual-text feature correspondence; and (3) an Exponential Moving Average (EMA) strategy for improved model generalization. We employ a multi-task learning framework combining CTC and attention-based losses with intermediate CTC supervision. Experiments on the MVLRS dataset demonstrate that our approach achieves competitive performance with a Word Error Rate (WER) of 21.2\% and Character Error Rate (CER) of 12.7\%, validating the effectiveness of our proposed methods.
+\end{abstract}
+
+\begin{IEEEkeywords}
+lip reading, visual speech recognition, Conformer, contrastive learning, dynamic features
+\end{IEEEkeywords}
+
+% 引入各个章节
+\input{sections/introduction}
+\input{sections/related_work}
+\input{sections/methodology}
+\input{sections/experiments}
+\input{sections/conclusion}
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}

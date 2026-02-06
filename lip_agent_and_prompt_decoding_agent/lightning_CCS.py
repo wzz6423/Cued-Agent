@@ -4,7 +4,7 @@ import torchaudio
 import copy
 
 from CCS_metrics import compute_cer, compute_wer
-from cosine import WarmupCosineScheduler
+from cosine import WarmupCosineScheduler, WarmupCosineRestartScheduler
 from datamodule.transforms import TextTransform, TextTransform_CCS
 from datamodule.transforms_english import TextTransform_English
 
@@ -127,8 +127,15 @@ class ModelModule_CCS(LightningModule):
                 ckpt.pop('ctc.ctc_lo.bias')
 
             if self.cfg.transfer_frontend:
-                tmp_ckpt = {k: v for k, v in ckpt["model_state_dict"].items() if
-                            k.startswith("trunk.") or k.startswith("frontend3D.")}
+                # Support both formats: ckpt with "model_state_dict" key, or flat state_dict
+                src = ckpt.get("model_state_dict", ckpt)
+                tmp_ckpt = {}
+                for k, v in src.items():
+                    if k.startswith("trunk.") or k.startswith("frontend3D."):
+                        tmp_ckpt[k] = v
+                    elif k.startswith("encoder.frontend."):
+                        new_k = k.replace("encoder.frontend.", "")
+                        tmp_ckpt[new_k] = v
                 self.model.encoder.frontend.load_state_dict(tmp_ckpt)
             elif self.cfg.transfer_encoder:
                 tmp_ckpt = {k.replace("encoder.", ""): v for k, v in ckpt.items() if k.startswith("encoder.")}
@@ -142,7 +149,7 @@ class ModelModule_CCS(LightningModule):
         decoder_params = [p for n, p in self.model.named_parameters() if "decoder" in n and p.requires_grad]
         other_params = [p for n, p in self.model.named_parameters() if ("encoder" not in n and "decoder" not in n) and p.requires_grad]
 
-        encoder_lr = getattr(self.cfg.optimizer, "encoder_lr", self.cfg.optimizer.lr * 0.2)
+        encoder_lr = getattr(self.cfg.optimizer, "encoder_lr", self.cfg.optimizer.lr)  # Same as decoder
         decoder_lr = getattr(self.cfg.optimizer, "decoder_lr", self.cfg.optimizer.lr)
 
         param_groups = []
@@ -154,21 +161,32 @@ class ModelModule_CCS(LightningModule):
             param_groups.append({"params": other_params, "lr": decoder_lr, "name": "other"})
 
         optimizer = torch.optim.AdamW(param_groups, weight_decay=self.cfg.optimizer.weight_decay, betas=(0.9, 0.98))
-        scheduler = WarmupCosineScheduler(optimizer, self.cfg.optimizer.warmup_epochs, self.cfg.trainer.max_epochs,
-                                         len(self.trainer.datamodule.train_dataloader()))
+
+        # Use Cosine Annealing with Warm Restarts
+        T_0 = getattr(self.cfg.optimizer, "T_0", 10)  # First cycle: 10 epochs
+        T_mult = getattr(self.cfg.optimizer, "T_mult", 2)  # Cycle multiplier
+        eta_min_ratio = getattr(self.cfg.optimizer, "eta_min_ratio", 0.01)
+
+        scheduler = WarmupCosineRestartScheduler(
+            optimizer,
+            self.cfg.optimizer.warmup_epochs,
+            T_0,
+            len(self.trainer.datamodule.train_dataloader()),
+            T_mult=T_mult,
+            eta_min_ratio=eta_min_ratio
+        )
         scheduler = {"scheduler": scheduler, "interval": "step", "frequency": 1}
         return [optimizer], [scheduler]
 
     def training_step(self, batch, batch_idx):
         loss = self._step(batch, batch_idx, step_type="train")
 
-        # Initialize EMA after first step (when model is on correct device)
-        if self.use_ema and self.ema is None:
-            self.ema = EMA(self.model, decay=self.ema_decay)
-            print(f"  ✓ EMA initialized with decay={self.ema_decay}")
-
-        # Update EMA after each training step
-        if self.use_ema and self.ema is not None:
+        # EMA: Only enable after epoch 10 (when model has stabilized)
+        ema_start_epoch = 10
+        if self.use_ema and self.current_epoch >= ema_start_epoch:
+            if self.ema is None:
+                self.ema = EMA(self.model, decay=self.ema_decay)
+                print(f"  ✓ EMA initialized at epoch {self.current_epoch} with decay={self.ema_decay}")
             self.ema.update()
 
         return loss
@@ -257,16 +275,21 @@ class ModelModule_CCS(LightningModule):
             loss_align_v2t = torch.nn.functional.cross_entropy(logits, labels)
             loss_align_t2v = torch.nn.functional.cross_entropy(logits.T, labels)
             loss_align = (loss_align_v2t + loss_align_t2v) / 2
-            
-            # Loss Warmup Strategy (Suggestion 1)
-            # Gradually increase alignment loss weight from 0.0 to 0.1 over first 5 epochs
-            warmup_epochs = 5
+
+            # Contrastive Learning: Only enable after epoch 20 (when model has learned basics)
+            # Then gradually increase weight from 0.0 to 0.1 over 10 epochs
+            start_epoch = 20
+            warmup_epochs = 10
             target_weight = 0.1
-            if self.current_epoch < warmup_epochs:
-                align_weight = target_weight * (self.current_epoch / warmup_epochs)
+
+            if self.current_epoch < start_epoch:
+                align_weight = 0.0  # Disabled in early training
+            elif self.current_epoch < start_epoch + warmup_epochs:
+                progress = (self.current_epoch - start_epoch) / warmup_epochs
+                align_weight = target_weight * progress
             else:
                 align_weight = target_weight
-            
+
             loss = loss + align_weight * loss_align
             
             self.log("loss_align", loss_align, on_step=False, on_epoch=True, batch_size=batch_size)

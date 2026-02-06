@@ -1,4 +1,7 @@
 name: adamw
-lr: 1e-3
+lr: 1e-4
 warmup_epochs: 5
-weight_decay: 0.03
+weight_decay: 0.01
+T_0: 15
+T_mult: 2
+eta_min_ratio: 0.01

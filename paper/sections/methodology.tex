@@ -1,0 +1,118 @@
+\section{Methodology}
+\label{sec:method}
+
+\subsection{System Overview}
+
+Our proposed Cued-Agent system consists of four main components: (1) a visual frontend for spatial feature extraction, (2) a Conformer encoder with dynamic feature learning, (3) a Transformer decoder for sequence generation, and (4) a semantic alignment module.
+
+% TODO: 添加架构图后取消注释
+% \begin{figure}[htbp]
+% \centerline{\includegraphics[width=0.48\textwidth]{figures/architecture.pdf}}
+% \caption{Overall architecture of the proposed Cued-Agent system.}
+% \label{fig:architecture}
+% \end{figure}
+
+\subsection{Visual Frontend}
+
+The visual frontend employs a 3D convolutional layer followed by a ResNet-18 backbone to extract spatiotemporal features from input video frames. Given an input video sequence $\mathbf{V} \in \mathbb{R}^{T \times C \times H \times W}$, where $T$ is the number of frames, $C$ is the number of channels, and $H, W$ are the spatial dimensions, the frontend produces feature representations:
+
+\begin{equation}
+\mathbf{F} = \text{ResNet3D}(\mathbf{V}) \in \mathbb{R}^{T' \times D}
+\end{equation}
+
+where $T'$ is the downsampled temporal length and $D$ is the feature dimension.
+
+\subsection{Dynamic Feature Module}
+
+A key innovation of our approach is the Dynamic Feature Module, which explicitly models the temporal dynamics of lip movements. We compute velocity (first-order derivative) and acceleration (second-order derivative) of the visual features:
+
+\begin{equation}
+\mathbf{F}^{(1)}_t = \frac{\mathbf{F}_{t+1} - \mathbf{F}_{t-1}}{2}
+\end{equation}
+
+\begin{equation}
+\mathbf{F}^{(2)}_t = \frac{\mathbf{F}^{(1)}_{t+1} - \mathbf{F}^{(1)}_{t-1}}{2}
+\end{equation}
+
+The original features, velocity, and acceleration are concatenated and projected back to the original dimension:
+
+\begin{equation}
+\mathbf{F}^{dyn} = \text{Conv3D}([\mathbf{F}; \mathbf{F}^{(1)}; \mathbf{F}^{(2)}])
+\end{equation}
+
+This module is initialized with identity mapping to ensure stable training in early epochs.
+
+\subsection{Conformer Encoder}
+
+The Conformer encoder consists of $L=12$ layers, each containing a multi-head self-attention module and a convolution module in a Macaron-style architecture:
+
+\begin{equation}
+\mathbf{x}' = \mathbf{x} + \frac{1}{2}\text{FFN}(\mathbf{x})
+\end{equation}
+\begin{equation}
+\mathbf{x}'' = \mathbf{x}' + \text{MHSA}(\mathbf{x}')
+\end{equation}
+\begin{equation}
+\mathbf{x}''' = \mathbf{x}'' + \text{Conv}(\mathbf{x}'')
+\end{equation}
+\begin{equation}
+\mathbf{y} = \text{LayerNorm}(\mathbf{x}''' + \frac{1}{2}\text{FFN}(\mathbf{x}'''))
+\end{equation}
+
+where FFN denotes the feed-forward network, MHSA is multi-head self-attention with 12 heads and dimension 768, and Conv is a depth-wise separable convolution with kernel size 31.
+
+\subsection{Semantic Alignment Module}
+
+To enhance the correspondence between visual and linguistic representations, we introduce a semantic alignment module based on contrastive learning. Given encoder output $\mathbf{E} \in \mathbb{R}^{B \times T \times D}$ and decoder text embeddings $\mathbf{T} \in \mathbb{R}^{B \times S \times D}$, we first apply mean pooling:
+
+\begin{equation}
+\mathbf{v}_i = \frac{1}{T}\sum_{t=1}^{T} \mathbf{E}_{i,t}, \quad \mathbf{t}_i = \frac{1}{S}\sum_{s=1}^{S} \mathbf{T}_{i,s}
+\end{equation}
+
+Then project to a shared space and normalize:
+
+\begin{equation}
+\hat{\mathbf{v}}_i = \frac{W_v \mathbf{v}_i}{\|W_v \mathbf{v}_i\|_2}, \quad \hat{\mathbf{t}}_i = \frac{W_t \mathbf{t}_i}{\|W_t \mathbf{t}_i\|_2}
+\end{equation}
+
+where $W_v, W_t \in \mathbb{R}^{256 \times D}$ are learnable projection matrices.
+
+The contrastive loss is computed using InfoNCE:
+
+\begin{equation}
+\mathcal{L}_{v2t} = -\frac{1}{B}\sum_{i=1}^{B} \log \frac{\exp(\hat{\mathbf{v}}_i \cdot \hat{\mathbf{t}}_i / \tau)}{\sum_{j=1}^{B}\exp(\hat{\mathbf{v}}_i \cdot \hat{\mathbf{t}}_j / \tau)}
+\end{equation}
+
+\begin{equation}
+\mathcal{L}_{align} = \frac{1}{2}(\mathcal{L}_{v2t} + \mathcal{L}_{t2v})
+\end{equation}
+
+where $\tau = 0.07$ is the temperature parameter.
+
+\subsection{Multi-Task Learning Framework}
+
+We employ a multi-task learning framework combining CTC and attention-based losses:
+
+\begin{equation}
+\mathcal{L}_{main} = \alpha \mathcal{L}_{CTC} + (1-\alpha) \mathcal{L}_{att}
+\end{equation}
+
+where $\alpha = 0.1$ balances the two losses. Additionally, we apply intermediate CTC supervision at the 6th encoder layer with weight 0.5.
+
+The total training loss is:
+
+\begin{equation}
+\mathcal{L} = \mathcal{L}_{main} + \lambda(e) \mathcal{L}_{align}
+\end{equation}
+
+where $\lambda(e)$ is a warmup weight that linearly increases from 0 to 0.1 over the first 5 epochs.
+
+\subsection{Exponential Moving Average}
+
+To improve generalization, we maintain an exponential moving average of model parameters:
+
+\begin{equation}
+\theta_{EMA}^{(t)} = \beta \theta_{EMA}^{(t-1)} + (1-\beta) \theta^{(t)}
+\end{equation}
+
+where $\beta = 0.999$ is the decay rate. During validation and inference, we use $\theta_{EMA}$ instead of $\theta$.

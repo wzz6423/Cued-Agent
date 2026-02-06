@@ -12,12 +12,12 @@ hydra:
   run:  
     dir: .
 exp_dir: results
-exp_name: test_run
+exp_name: test_run_pretrained
 gpus: 0
 slurm_job_id: null
-file_path: 
+file_path:
 ckpt_path: null
-pretrained_model_path: /home/ubuntu/wzz/Cued-Agent/checkpoints/pretrained/vsr_trlrs2lrs3vox2avsp_base.pth
-transfer_frontend:
+pretrained_model_path: pretrained_vsr/LRS3_V_WER19.1/model.pth
+transfer_frontend: True
 transfer_encoder:
 

@@ -1,7 +1,7 @@
-adim: 768
-aheads: 12
-eunits: 3072
-elayers: 12
+adim: 384
+aheads: 6
+eunits: 1536
+elayers: 8
 transformer_input_layer: conv3d
 dropout_rate: 0.1
 transformer_attn_dropout_rate: 0.1
@@ -12,10 +12,10 @@ cnn_module_kernel: 31
 zero_triu: False
 a_upsample_ratio: 1
 relu_type: swish
-ddim: 768
-dheads: 12
-dunits: 3072
-dlayers: 6
+ddim: 384
+dheads: 6
+dunits: 1536
+dlayers: 4
 lsm_weight: 0.1
 transformer_length_normalized_loss: False
 mtlalpha: 0.1

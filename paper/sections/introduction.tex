@@ -1,0 +1,20 @@
+\section{Introduction}
+\label{sec:introduction}
+
+Lip reading, or visual speech recognition (VSR), is the task of recognizing spoken content solely from visual information of lip movements. This technology has significant applications in human-computer interaction, assistive technologies for hearing-impaired individuals, silent speech interfaces, and multi-modal speech recognition systems \cite{afouras2018deep}.
+
+Despite remarkable advances in deep learning-based lip reading systems, several challenges persist. First, lip movements exhibit complex temporal dynamics that are difficult to capture with standard feature extraction methods. Second, the visual-linguistic alignment problem remains challenging due to the inherent ambiguity in mapping visual lip patterns to phonetic units. Third, training deep networks for lip reading often suffers from overfitting due to limited training data.
+
+To address these challenges, we propose \textbf{Cued-Agent}, a novel end-to-end lip reading system with three key contributions:
+
+\begin{itemize}
+    \item \textbf{Dynamic Feature Module}: We introduce a module that explicitly computes velocity (first-order derivative) and acceleration (second-order derivative) of visual features, capturing the dynamic nature of lip movements.
+
+    \item \textbf{Semantic Alignment}: We employ contrastive learning to align visual encoder outputs with text decoder embeddings, enhancing the correspondence between visual and linguistic representations.
+
+    \item \textbf{EMA Training Strategy}: We utilize Exponential Moving Average of model weights during training, which improves generalization and stabilizes the learning process.
+\end{itemize}
+
+Our system is built upon the Conformer architecture \cite{gulati2020conformer}, which combines the strengths of Transformers for capturing global dependencies and convolutional neural networks for modeling local patterns. We employ a multi-task learning framework that jointly optimizes CTC and attention-based losses.
+
+The remainder of this paper is organized as follows: Section \ref{sec:related} reviews related work. Section \ref{sec:method} describes our proposed methodology. Section \ref{sec:experiments} presents experimental results. Section \ref{sec:conclusion} concludes the paper.

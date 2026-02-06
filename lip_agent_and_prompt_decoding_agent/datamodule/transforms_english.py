@@ -11,8 +11,9 @@ class TextTransform_English:
     """Character-level tokenizer for English lip reading."""
 
     def __init__(self):
-        # Character vocabulary: A-Z + space + apostrophe
-        chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ '"
+        # Character vocabulary: space + A-Z + apostrophe (matching dataset format)
+        # Token mapping: 0=blank, 1=space, 2-27=A-Z, 28=apostrophe, 29=unk, 30=eos
+        chars = " ABCDEFGHIJKLMNOPQRSTUVWXYZ'"
         self.hashmap = {c: i + 1 for i, c in enumerate(chars)}  # 1-indexed
         self.hashmap["<unk>"] = len(chars) + 1
 

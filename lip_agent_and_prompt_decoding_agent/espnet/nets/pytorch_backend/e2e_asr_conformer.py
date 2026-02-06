@@ -66,10 +66,9 @@ class E2E(torch.nn.Module):
         torch.nn.Module.__init__(self)
 
         # Initialize Dynamic Feature Module
-        # Assuming grayscale input (1 channel) for now, or infer from args if available
-        # In standard Cued Speech, input is often grayscale (1) or RGB (3)
-        # We use a safe default of 1, but it should ideally match input data
+        # Only used during inference, disabled during training
         self.dynamic_feature_module = DynamicFeatureModule(input_channels=1)
+        self.use_dynamic_features = False  # Disabled during training, enable for inference
 
         self.encoder = Encoder(
             attention_dim=args.adim,
@@ -135,7 +134,7 @@ class E2E(torch.nn.Module):
             self.ctc_inter = CTC(
                 odim, args.adim, args.dropout_rate, ctc_type=args.ctc_type, reduce=True
             )
-            self.interctc_weight = 0.5 # Weight for intermediate CTC
+            self.interctc_weight = 0.0 # Disabled - was causing CTC to stagnate
         else:
             self.ctc = None
             self.ctc_inter = None
@@ -145,11 +144,10 @@ class E2E(torch.nn.Module):
             lengths = torch.div(lengths, 640, rounding_mode="trunc")
         padding_mask = make_non_pad_mask(lengths).to(x.device).unsqueeze(-2)
 
-        # Apply Dynamic Feature Extraction (Idea 2)
-        if x.dim() == 5: # [B, T, C, H, W] -> [B, C, T, H, W]
+        # Apply Dynamic Feature Extraction (only during inference)
+        if self.use_dynamic_features and x.dim() == 5:
              x = x.permute(0, 2, 1, 3, 4)
              x = self.dynamic_feature_module(x)
-             # Permute back to [B, T, C, H, W] for the rest of the encoder
              x = x.permute(0, 2, 1, 3, 4)
              
         # Concatenate C into H or W or flatten for linear input if needed

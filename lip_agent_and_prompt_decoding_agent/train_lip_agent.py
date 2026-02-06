@@ -48,7 +48,7 @@ def main(cfg):
     elif torch.cuda.is_available():
         accelerator = "gpu"
         devices = cfg.gpus if hasattr(cfg, "gpus") else 1
-        strategy = DDPStrategy(find_unused_parameters=False)
+        strategy = DDPStrategy(find_unused_parameters=True)
         print(f"  ✓ Using NVIDIA GPU (CUDA) accelerator with {devices} devices")
     else:
         accelerator = "cpu"
@@ -66,7 +66,8 @@ def main(cfg):
         use_distributed_sampler=False,  # Use custom batch sampler
     )
 
-    trainer.fit(model=modelmodule, datamodule=datamodule)
+    ckpt_path = cfg.ckpt_path if cfg.ckpt_path else None
+    trainer.fit(model=modelmodule, datamodule=datamodule, ckpt_path=ckpt_path)
     ensemble(cfg)
 
 

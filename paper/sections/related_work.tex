@@ -1,0 +1,18 @@
+\section{Related Work}
+\label{sec:related}
+
+\subsection{Deep Learning for Lip Reading}
+
+Early deep learning approaches to lip reading employed Convolutional Neural Networks (CNNs) combined with Recurrent Neural Networks (RNNs) \cite{assael2016lipnet}. LipNet \cite{assael2016lipnet} was the first end-to-end sentence-level lip reading model using spatiotemporal convolutions and bidirectional GRUs. Subsequent works improved upon this by using attention mechanisms and larger datasets \cite{afouras2018deep, chung2017lip}.
+
+\subsection{Transformer-based Approaches}
+
+The introduction of Transformers \cite{vaswani2017attention} revolutionized sequence modeling. In lip reading, Transformer-based models have shown superior performance by capturing long-range dependencies in video sequences \cite{afouras2018deep}. The Conformer architecture \cite{gulati2020conformer}, originally proposed for speech recognition, combines self-attention with convolution modules, making it particularly suitable for modeling both global and local patterns in lip movements.
+
+\subsection{Multi-modal Learning}
+
+Recent works have explored audio-visual speech recognition, leveraging both modalities for improved robustness \cite{ma2021end}. AV-HuBERT \cite{shi2022learning} introduced self-supervised pre-training for audio-visual speech recognition. Our work focuses on the visual-only setting while incorporating semantic alignment between visual and textual representations.
+
+\subsection{Contrastive Learning}
+
+Contrastive learning has emerged as a powerful technique for learning representations \cite{chen2020simple}. CLIP \cite{radford2021learning} demonstrated the effectiveness of contrastive learning for vision-language alignment. We adapt this approach to align visual lip features with linguistic embeddings.

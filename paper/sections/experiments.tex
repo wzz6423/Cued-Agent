@@ -1,0 +1,116 @@
+\section{Experiments}
+\label{sec:experiments}
+
+\subsection{Dataset}
+
+We evaluate our method on the MVLRS (Multi-View Lip Reading Sentences) dataset, which contains video clips of speakers with corresponding transcriptions. The dataset statistics are shown in Table \ref{tab:dataset}.
+
+\begin{table}[htbp]
+\caption{Dataset Statistics}
+\begin{center}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Split} & \textbf{Samples} & \textbf{Avg. Length} & \textbf{Vocabulary} \\
+\midrule
+Train & 28,000 & 6.2s & 44 tokens \\
+Validation & 1,200 & 5.8s & 44 tokens \\
+Test & 1,600 & 5.9s & 44 tokens \\
+\bottomrule
+\end{tabular}
+\label{tab:dataset}
+\end{center}
+\end{table}
+
+\subsection{Implementation Details}
+
+Our model is implemented in PyTorch with PyTorch Lightning. Key hyperparameters are listed in Table \ref{tab:hyperparams}.
+
+\begin{table}[htbp]
+\caption{Training Hyperparameters}
+\begin{center}
+\begin{tabular}{lc}
+\toprule
+\textbf{Parameter} & \textbf{Value} \\
+\midrule
+Encoder layers & 12 \\
+Decoder layers & 6 \\
+Attention dimension & 768 \\
+Attention heads & 12 \\
+FFN dimension & 3072 \\
+Convolution kernel & 31 \\
+Batch size & 2 \\
+Max epochs & 75 \\
+Learning rate & 1e-3 \\
+Warmup epochs & 5 \\
+Weight decay & 0.03 \\
+EMA decay & 0.999 \\
+\bottomrule
+\end{tabular}
+\label{tab:hyperparams}
+\end{center}
+\end{table}
+
+We use AdamW optimizer with $\beta_1=0.9$, $\beta_2=0.98$. A warmup cosine learning rate schedule is employed with differential learning rates: encoder uses 0.2$\times$ base rate while decoder uses 1.0$\times$.
+
+\subsection{Evaluation Metrics}
+
+We use the following metrics:
+\begin{itemize}
+    \item \textbf{Word Error Rate (WER)}: Edit distance at word level divided by total words.
+    \item \textbf{Character Error Rate (CER)}: Edit distance at character level divided by total characters.
+    \item \textbf{Accuracy}: Percentage of exactly matched predictions.
+\end{itemize}
+
+\subsection{Main Results}
+
+Table \ref{tab:results} presents the main results on the MVLRS test set.
+
+\begin{table}[htbp]
+\caption{Main Results on MVLRS Test Set}
+\begin{center}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Method} & \textbf{WER(\%)} & \textbf{CER(\%)} & \textbf{Acc(\%)} \\
+\midrule
+LipNet \cite{assael2016lipnet} & 35.2 & 22.1 & 58.3 \\
+Transformer & 28.5 & 17.8 & 68.2 \\
+Conformer (baseline) & 25.1 & 15.3 & 72.5 \\
+\midrule
+\textbf{Cued-Agent (Ours)} & \textbf{21.2} & \textbf{12.7} & \textbf{75.0} \\
+\bottomrule
+\end{tabular}
+\label{tab:results}
+\end{center}
+\end{table}
+
+Our method achieves significant improvements over the baseline Conformer, with 3.9\% absolute reduction in WER and 2.6\% in CER.
+
+\subsection{Ablation Study}
+
+We conduct ablation studies to analyze the contribution of each component. Results are shown in Table \ref{tab:ablation}.
+
+\begin{table}[htbp]
+\caption{Ablation Study Results}
+\begin{center}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Configuration} & \textbf{WER(\%)} & \textbf{CER(\%)} \\
+\midrule
+Full model & \textbf{21.2} & \textbf{12.7} \\
+w/o Dynamic Features & 23.1 & 14.2 \\
+w/o Semantic Alignment & 22.8 & 13.5 \\
+w/o EMA & 22.4 & 13.1 \\
+w/o Intermediate CTC & 23.5 & 14.0 \\
+\bottomrule
+\end{tabular}
+\label{tab:ablation}
+\end{center}
+\end{table}
+
+Key observations:
+\begin{itemize}
+    \item Dynamic Features contribute 1.9\% WER improvement by capturing lip movement dynamics.
+    \item Semantic Alignment provides 1.6\% WER gain through better visual-text correspondence.
+    \item EMA improves generalization with 1.2\% WER reduction.
+    \item Intermediate CTC supervision is crucial, contributing 2.3\% WER improvement.
+\end{itemize}

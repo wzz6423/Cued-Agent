@@ -1,0 +1,15 @@
+#!/bin/bash
+echo "===== 训练进度检查 ====="
+echo "时间: $(date)"
+echo ""
+echo "=== 进程状态 ==="
+ps aux | grep -E "python.*train" | grep -v grep || echo "训练进程未运行"
+echo ""
+echo "=== GPU状态 ==="
+nvidia-smi --query-gpu=name,memory.used,memory.total,utilization.gpu,temperature.gpu --format=csv
+echo ""
+echo "=== 最新日志 ==="
+tail -10 /home/ubuntu/wzz/Cued-Agent/training.log 2>/dev/null || echo "无日志"
+echo ""
+echo "=== 检查点文件 ==="
+ls -la /home/ubuntu/wzz/Cued-Agent/checkpoints/backups/*.ckpt 2>/dev/null || echo "暂无检查点"

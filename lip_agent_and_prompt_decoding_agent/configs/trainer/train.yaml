@@ -1,12 +1,9 @@
 precision: 32
 log_every_n_steps: 10
-max_epochs: 75
+max_epochs: 300
 num_nodes: 1
 sync_batchnorm: True
 default_root_dir: ${exp_dir}
 num_sanity_val_steps: 0
-accumulate_grad_batches: 1
-gradient_clip_val: 5.0
-# Full training: remove batch limits for complete dataset training
-# limit_train_batches: 1  # Disabled for full training
-# limit_val_batches: 1    # Disabled for full validation
+accumulate_grad_batches: 4
+gradient_clip_val: 1.0
